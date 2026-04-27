@@ -1,12 +1,12 @@
-import 'package:dart_hw8/models/user_profile.dart';
-import 'package:dart_hw8/services/random_user_service.dart';
+import 'package:dart_hw8/bloc/swipe/swipe_bloc.dart';
+import 'package:dart_hw8/bloc/swipe/swipe_event.dart';
+import 'package:dart_hw8/bloc/swipe/swipe_state.dart';
 import 'package:dart_hw8/widgets/user_card.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_card_swiper/flutter_card_swiper.dart';
-
-enum ViewState { loading, loaded, error }
 
 class SwipeScreen extends StatefulWidget {
   const SwipeScreen({super.key});
@@ -16,220 +16,161 @@ class SwipeScreen extends StatefulWidget {
 }
 
 class _SwipeScreenState extends State<SwipeScreen> {
-  final RandomUserService _service = RandomUserService();
   final CardSwiperController _swiperController = CardSwiperController();
-
-  ViewState _state = ViewState.loading;
-  List<UserProfile> _users = const [];
-  String _errorMessage = '';
-  int _likedCount = 0;
-  int _skippedCount = 0;
-  int _superLikeCount = 0;
-  bool _isDeckFinished = false;
-  double _dragX = 0;
-  double _dragY = 0;
-  int _likedPulseTick = 0;
-  int _skippedPulseTick = 0;
-  int _superPulseTick = 0;
-
-  @override
-  void initState() {
-    super.initState();
-    _loadUsers();
-  }
-
-  Future<void> _loadUsers() async {
-    setState(() {
-      _state = ViewState.loading;
-      _errorMessage = '';
-    });
-
-    try {
-      final users = await _service.fetchUsers(count: 12);
-      setState(() {
-        _users = users;
-        _likedCount = 0;
-        _skippedCount = 0;
-        _superLikeCount = 0;
-        _isDeckFinished = false;
-        _likedPulseTick = 0;
-        _skippedPulseTick = 0;
-        _superPulseTick = 0;
-        _state = users.isEmpty ? ViewState.error : ViewState.loaded;
-        _errorMessage = users.isEmpty ? 'No users received from API.' : '';
-      });
-    } catch (e) {
-      setState(() {
-        _state = ViewState.error;
-        _errorMessage = e.toString().replaceFirst('Exception: ', '');
-      });
-    }
-  }
 
   bool _onSwipe(
     int previousIndex,
     int? currentIndex,
     CardSwiperDirection direction,
   ) {
-    var like = 0;
-    var skip = 0;
-    var superLike = 0;
     if (direction == CardSwiperDirection.right) {
       HapticFeedback.lightImpact();
-      like = 1;
     } else if (direction == CardSwiperDirection.left) {
       HapticFeedback.selectionClick();
-      skip = 1;
     } else if (direction == CardSwiperDirection.top) {
       HapticFeedback.mediumImpact();
-      superLike = 1;
     }
 
-    setState(() {
-      _dragX = 0;
-      _dragY = 0;
-      _likedCount += like;
-      _skippedCount += skip;
-      _superLikeCount += superLike;
-      _likedPulseTick += like;
-      _skippedPulseTick += skip;
-      _superPulseTick += superLike;
-      if (currentIndex == null) {
-        _isDeckFinished = true;
-      }
-    });
+    context.read<SwipeBloc>().add(
+      SwipeCommitted(direction: direction, currentIndex: currentIndex),
+    );
     return true;
   }
 
   void _updateDrag(double x, double y) {
-    if ((_dragX - x).abs() < 0.02 && (_dragY - y).abs() < 0.02) {
-      return;
-    }
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      setState(() {
-        _dragX = x;
-        _dragY = y;
-      });
-    });
+    context.read<SwipeBloc>().add(SwipeDragChanged(dragX: x, dragY: y));
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      extendBodyBehindAppBar: true,
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        centerTitle: true,
-        title: const _AppLogo(),
-        foregroundColor: Colors.white,
-        actions: [
-          IconButton(
-            onPressed: _loadUsers,
-            icon: const Icon(Icons.refresh_rounded),
-            tooltip: 'Refresh users',
-          ),
-        ],
-      ),
-      body: Container(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [
-              Color(0xFF1A1538),
-              Color(0xFF2D1F5B),
-              Color(0xFF0F1020),
+    return BlocBuilder<SwipeBloc, SwipeState>(
+      builder: (context, state) {
+        return Scaffold(
+          extendBodyBehindAppBar: true,
+          appBar: AppBar(
+            backgroundColor: Colors.transparent,
+            elevation: 0,
+            centerTitle: true,
+            title: const _AppLogo(),
+            foregroundColor: Colors.white,
+            actions: [
+              IconButton(
+                onPressed: () {
+                  context.read<SwipeBloc>().add(const SwipeLoadRequested());
+                },
+                icon: const Icon(Icons.refresh_rounded),
+                tooltip: 'Refresh users',
+              ),
             ],
           ),
-        ),
-        child: SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-            child: switch (_state) {
-              ViewState.loading => const _LoadingState(),
-              ViewState.error => _ErrorState(
-                  message: _errorMessage,
-                  onRetry: _loadUsers,
-                ),
-              ViewState.loaded => Column(
-                  children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+          body: Container(
+            decoration: const BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  Color(0xFF1A1538),
+                  Color(0xFF2D1F5B),
+                  Color(0xFF0F1020),
+                ],
+              ),
+            ),
+            child: SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+                child: switch (state.status) {
+                  SwipeStatus.loading => const _LoadingState(),
+                  SwipeStatus.error => _ErrorState(
+                      message: state.errorMessage,
+                      onRetry: () {
+                        context.read<SwipeBloc>().add(const SwipeLoadRequested());
+                      },
+                    ),
+                  SwipeStatus.loaded => Column(
                       children: [
-                        _CounterBadge(
-                          label: 'Liked',
-                          value: _likedCount,
-                          color: Colors.greenAccent,
-                          pulseTick: _likedPulseTick,
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                          children: [
+                            _CounterBadge(
+                              label: 'Liked',
+                              value: state.likedCount,
+                              color: Colors.greenAccent,
+                              pulseTick: state.likedPulseTick,
+                            ),
+                            _CounterBadge(
+                              label: 'Skipped',
+                              value: state.skippedCount,
+                              color: Colors.redAccent,
+                              pulseTick: state.skippedPulseTick,
+                            ),
+                            _CounterBadge(
+                              label: 'Super',
+                              value: state.superLikeCount,
+                              color: Colors.lightBlueAccent,
+                              pulseTick: state.superPulseTick,
+                            ),
+                          ],
                         ),
-                        _CounterBadge(
-                          label: 'Skipped',
-                          value: _skippedCount,
-                          color: Colors.redAccent,
-                          pulseTick: _skippedPulseTick,
-                        ),
-                        _CounterBadge(
-                          label: 'Super',
-                          value: _superLikeCount,
-                          color: Colors.lightBlueAccent,
-                          pulseTick: _superPulseTick,
+                        const SizedBox(height: 16),
+                        _HintPanel(dragX: state.dragX, dragY: state.dragY),
+                        const SizedBox(height: 14),
+                        Expanded(
+                          child: AnimatedSwitcher(
+                            duration: const Duration(milliseconds: 220),
+                            switchInCurve: Curves.easeOutCubic,
+                            switchOutCurve: Curves.easeOutCubic,
+                            child: state.isDeckFinished
+                                ? _DeckFinishedState(
+                                    onReload: () {
+                                      context.read<SwipeBloc>().add(
+                                        const SwipeLoadRequested(),
+                                      );
+                                    },
+                                  )
+                                : CardSwiper(
+                                    key: const ValueKey('deck'),
+                                    controller: _swiperController,
+                                    cardsCount: state.users.length,
+                                    onSwipe: _onSwipe,
+                                    numberOfCardsDisplayed: 3,
+                                    scale: 0.93,
+                                    backCardOffset: const Offset(0, 18.0),
+                                    padding: const EdgeInsets.all(4),
+                                    allowedSwipeDirection:
+                                        const AllowedSwipeDirection.only(
+                                          left: true,
+                                          right: true,
+                                          up: true,
+                                        ),
+                                    cardBuilder: (
+                                      context,
+                                      index,
+                                      horizontalThresholdPercentage,
+                                      verticalThresholdPercentage,
+                                    ) {
+                                      _updateDrag(
+                                        horizontalThresholdPercentage.toDouble(),
+                                        verticalThresholdPercentage.toDouble(),
+                                      );
+                                      return UserCard(
+                                        user: state.users[index],
+                                        horizontalSwipe:
+                                            horizontalThresholdPercentage.toDouble(),
+                                        verticalSwipe:
+                                            verticalThresholdPercentage.toDouble(),
+                                      );
+                                    },
+                                  ),
+                          ),
                         ),
                       ],
                     ),
-                    const SizedBox(height: 16),
-                    _HintPanel(dragX: _dragX, dragY: _dragY),
-                    const SizedBox(height: 14),
-                    Expanded(
-                      child: AnimatedSwitcher(
-                        duration: const Duration(milliseconds: 220),
-                        switchInCurve: Curves.easeOutCubic,
-                        switchOutCurve: Curves.easeOutCubic,
-                        child: _isDeckFinished
-                            ? _DeckFinishedState(onReload: _loadUsers)
-                            : CardSwiper(
-                                key: const ValueKey('deck'),
-                                controller: _swiperController,
-                                cardsCount: _users.length,
-                                onSwipe: _onSwipe,
-                                numberOfCardsDisplayed: 3,
-                                scale: 0.93,
-                                backCardOffset: const Offset(0, 18.0),
-                                padding: const EdgeInsets.all(4),
-                                allowedSwipeDirection:
-                                    const AllowedSwipeDirection.only(
-                                      left: true,
-                                      right: true,
-                                      up: true,
-                                    ),
-                                cardBuilder: (
-                                  context,
-                                  index,
-                                  horizontalThresholdPercentage,
-                                  verticalThresholdPercentage,
-                                ) {
-                                  _updateDrag(
-                                    horizontalThresholdPercentage.toDouble(),
-                                    verticalThresholdPercentage.toDouble(),
-                                  );
-                                  return UserCard(
-                                    user: _users[index],
-                                    horizontalSwipe:
-                                        horizontalThresholdPercentage.toDouble(),
-                                    verticalSwipe:
-                                        verticalThresholdPercentage.toDouble(),
-                                  );
-                                },
-                              ),
-                      ),
-                    ),
-                  ],
-                ),
-            },
+                },
+              ),
+            ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 }
